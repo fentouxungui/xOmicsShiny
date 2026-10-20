@@ -192,12 +192,25 @@ jobs:
           ins(closure)
           nb <- setdiff(closure, have()); if (length(nb)) { cat("source retry:", length(nb), "\n"); ins(nb, type = "source", deps = FALSE) }
           if (identical(unname(Sys.info()[["sysname"]]), "Darwin")) {
-            sysref <- "^(/opt/X11|/opt/homebrew|/usr/local/opt|/usr/local/Cellar)"
+            sr <- split_pkgs(Sys.getenv("SOURCE_REBUILD"))
+            if (length(sr)) {
+              oldpath <- Sys.getenv("PATH"); pth <- strsplit(oldpath, .Platform$path.sep)[[1]]
+              pth <- pth[!grepl("homebrew|linuxbrew", pth, ignore.case = TRUE)]
+              Sys.setenv(PATH = paste(pth, collapse = .Platform$path.sep), PKG_CONFIG_PATH = "", PKG_CONFIG_LIBDIR = "")
+              cat("macOS source rebuild (Homebrew hidden):", paste(sr, collapse = ", "), "\n")
+              ins(sr, type = "source", deps = FALSE)
+              Sys.setenv(PATH = oldpath)
+            }
+
+            .libPaths(c(lib, .libPaths()))
+            sysref <- "(/opt/X11|/opt/homebrew|/usr/local/opt|/usr/local/Cellar)"
+            otool_L <- function(f) suppressWarnings(system2("otool", c("-L", shQuote(f)), stdout = TRUE, stderr = FALSE))
             deps_of <- function(f) {
-              o <- suppressWarnings(system2(Sys.which("otool"), c("-L", shQuote(f)), stdout = TRUE, stderr = FALSE))
+              o <- otool_L(f)
               if (length(o) < 2) return(character())
-              o <- trimws(sub(" \\(compatibility.*$", "", o[-1]))
-              o[nzchar(o)]
+              d <- trimws(o[-1])
+              d <- sub("[[:space:]]*\\(compatibility version.*$", "", d)
+              d[nzchar(d)]
             }
             sealfix <- function(f) system2("codesign", c("--force", "--sign", "-", shQuote(f)), stdout = FALSE, stderr = FALSE)
             relocate <- function(b, dp) {
@@ -207,19 +220,19 @@ jobs:
               system2("install_name_tool", c("-id", shQuote(paste0("@loader_path/", basename(dp))), shQuote(dest)), stdout = FALSE, stderr = FALSE)
               sealfix(dest); sealfix(b)
             }
-            bins0 <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE)
-            cat("audit: binaries", length(bins0), "| otool", Sys.which("otool"), "\n")
-            if (length(bins0)) { pr <- suppressWarnings(system2(Sys.which("otool"), c("-L", shQuote(bins0[1])), stdout = TRUE, stderr = TRUE)); cat("audit probe:", bins0[1], "\n"); cat(head(pr, 4), sep = "\n"); cat("\n") }
             for (round in 1:6) {
               bins <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE)
-              n <- 0
-              for (b in bins) for (dp in deps_of(b)) if (grepl(sysref, dp) && file.exists(dp)) { relocate(b, dp); n <- n + 1 }
-              cat("portability round", round, "relocations:", n, "\n")
+              n <- 0; skipped <- character()
+              for (b in bins) for (dp in deps_of(b)) if (grepl(sysref, dp)) {
+                if (file.exists(dp)) { relocate(b, dp); n <- n + 1 } else skipped <- c(skipped, dp)
+              }
+              cat("portability round", round, "relocations:", n, "unresolvable:", length(unique(skipped)), "\n")
               if (n == 0) break
             }
             bins <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE); bad <- character()
-            for (b in bins) { o <- suppressWarnings(system2("otool", c("-L", shQuote(b)), stdout = TRUE, stderr = FALSE)); if (any(grepl(sysref, o))) bad <- c(bad, b) }
+            for (b in bins) if (any(grepl(sysref, otool_L(b)))) bad <- c(bad, b)
             if (length(bad)) stop("non-portable dylib references remain: ", paste(unique(basename(bad)), collapse = ", "))
+            cat("macOS portability audit: clean (", length(bins), "binaries )\n")
           }
 
           required <- setdiff(seed, c(soft, base_pkgs)); miss <- setdiff(required, have())
