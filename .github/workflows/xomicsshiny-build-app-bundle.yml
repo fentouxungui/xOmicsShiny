@@ -94,6 +94,10 @@ jobs:
         shell: bash
         run: Rscript -e 'install.packages(c("jsonlite","zip","digest","BiocManager","callr","curl"), repos="https://cloud.r-project.org")'
 
+      - name: Install dylibbundler (macOS)
+        if: runner.os == 'macOS'
+        run: brew install dylibbundler
+
       - name: Resolve store version
         shell: bash
         run: |
@@ -213,9 +217,22 @@ jobs:
           }
 
           if (identical(unname(Sys.info()[["sysname"]]), "Darwin")) {
-            bins <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE); bad <- character()
-            for (b in bins) { o <- suppressWarnings(system2("otool", c("-L", shQuote(b)), stdout = TRUE, stderr = FALSE)); if (any(grepl("(/opt/X11|/opt/homebrew|/usr/local/opt)", o))) bad <- c(bad, b) }
-            if (length(bad)) stop("non-portable dylib references: ", paste(unique(basename(bad)), collapse = ", "))
+            audit <- function() {
+              bins <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE); bad <- character()
+              for (b in bins) { o <- suppressWarnings(system2("otool", c("-L", shQuote(b)), stdout = TRUE, stderr = FALSE)); if (any(grepl("(/opt/X11|/opt/homebrew|/usr/local/opt)", o))) bad <- c(bad, b) }
+              bad
+            }
+            bad <- audit()
+            if (length(bad)) {
+              db <- Sys.which("dylibbundler")
+              if (!nzchar(db)) stop("non-portable dylib references and dylibbundler missing: ", paste(unique(basename(bad)), collapse = ", "))
+              for (b in bad) {
+                cat("vendoring non-portable dylibs into", dirname(b), "\n")
+                system2(db, c("-of", "-b", "-x", shQuote(b), "-d", shQuote(dirname(b)), "-p", "@loader_path/"), stdout = TRUE, stderr = TRUE)
+              }
+              bad <- audit()
+              if (length(bad)) stop("non-portable dylib references remain: ", paste(unique(basename(bad)), collapse = ", "))
+            }
           }
 
           required <- setdiff(seed, c(soft, base_pkgs)); miss <- setdiff(required, have())
