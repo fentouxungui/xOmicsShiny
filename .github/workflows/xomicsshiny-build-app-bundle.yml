@@ -60,12 +60,12 @@ env:
   DEMO_OBJECT: ""
   DEMO_SAVE_AS: ""
   DEMO_RDATA: ""
-  EXTRA_PKGS: "ComplexHeatmap DBI DT Hmisc Mfuzz PCSF RColorBrewer RMariaDB VennDiagram WGCNA biomaRt broom car circlize cluster colourpicker coop corrplot cowplot dendextend dplyr drc dynamicTreeCut enrichR enrichplot factoextra fgsea flashClust forcats futile.logger ggExtra ggpmisc ggprism ggpubr ggrastr ggrepel gplots gridExtra heatmaply htmlwidgets metabaser modelr networkD3 openxlsx org.Hs.eg.db org.Mm.eg.db org.Rn.eg.db pathview pheatmap plotly plyr png pool psych purrr rclipboard reshape2 rgl rlang scales shiny shinyalert shinyjqui shinyjs shinythemes stringi stringr svgPanZoom svglite tibble tidyr tidyselect tidyverse visNetwork wikiprofiler yulab.utils"
+  EXTRA_PKGS: "ComplexHeatmap DBI DT Hmisc Mfuzz PCSF RColorBrewer RMariaDB VennDiagram WGCNA BH biomaRt broom car circlize colourpicker coop corrplot cowplot dendextend dplyr drc dynamicTreeCut enrichR enrichplot factoextra fgsea flashClust forcats futile.logger ggExtra ggpmisc ggprism ggpubr ggrastr ggrepel gplots gridExtra heatmaply htmlwidgets metabaser modelr networkD3 openxlsx org.Hs.eg.db org.Mm.eg.db org.Rn.eg.db pathview pheatmap plotly plyr png pool psych purrr rclipboard reshape2 rgl rlang scales shiny shinyalert shinyjqui shinyjs shinythemes stringi stringr svgPanZoom svglite tibble tidyr tidyselect tidyverse visNetwork wikiprofiler yulab.utils"
   EXCLUDE: ""
-  ARCHIVE_URLS: ""
+  ARCHIVE_URLS: "https://codeload.github.com/IOR-Bioinformatics/PCSF/tar.gz/refs/heads/master"
   EXTRA_REPOS: ""
   SOFT_PKGS: "metabaser"
-  SOURCE_REBUILD: ""
+  SOURCE_REBUILD: "gdtools"
   PREFETCH_SCRIPT: ""
   APP_NOTES: "All analysis modules (WGCNA, PCSF, Mfuzz, DRomics, GSEA/ORA, network, pathway) and the db/ annotation + KEGG map assets are bundled. metabaser (MetaBase gene-set browser) is not on CRAN/Bioconductor and is therefore not bundled; its trigger file db/human/metabase_maps_genesymbols.gmt is absent, so the feature stays disabled and does not affect startup. Demo datasets in data/ and networkdata/ are included so every module works offline."
   MAX_REQUEST_MB: "2048"
@@ -118,7 +118,7 @@ jobs:
           appdir  <- file.path(bundle, "app"); dir.create(appdir, recursive = TRUE)
           lib     <- file.path(bundle, "rlib"); dir.create(lib, recursive = TRUE)
           .libPaths(c(lib, .libPaths()))
-          base_pkgs <- rownames(installed.packages(priority = "base"))
+          base_pkgs <- rownames(installed.packages(priority = c("base", "recommended")))
           split_pkgs <- function(x) { p <- strsplit(trimws(x), "[ ,]+")[[1]]; p[nzchar(p)] }
           dcf_deps <- function(dcf, fields = c("Depends","Imports","LinkingTo")) {
             f <- intersect(fields, colnames(dcf)); if (!length(f)) return(character())
@@ -194,7 +194,7 @@ jobs:
           if (identical(unname(Sys.info()[["sysname"]]), "Darwin")) {
             sysref <- "^(/opt/X11|/opt/homebrew|/usr/local/opt|/usr/local/Cellar)"
             deps_of <- function(f) {
-              o <- suppressWarnings(system2("otool", c("-L", shQuote(f)), stdout = TRUE, stderr = FALSE))
+              o <- suppressWarnings(system2(Sys.which("otool"), c("-L", shQuote(f)), stdout = TRUE, stderr = FALSE))
               if (length(o) < 2) return(character())
               o <- trimws(sub(" \\(compatibility.*$", "", o[-1]))
               o[nzchar(o)]
@@ -207,6 +207,9 @@ jobs:
               system2("install_name_tool", c("-id", shQuote(paste0("@loader_path/", basename(dp))), shQuote(dest)), stdout = FALSE, stderr = FALSE)
               sealfix(dest); sealfix(b)
             }
+            bins0 <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE)
+            cat("audit: binaries", length(bins0), "| otool", Sys.which("otool"), "\n")
+            if (length(bins0)) { pr <- suppressWarnings(system2(Sys.which("otool"), c("-L", shQuote(bins0[1])), stdout = TRUE, stderr = TRUE)); cat("audit probe:", bins0[1], "\n"); cat(head(pr, 4), sep = "\n"); cat("\n") }
             for (round in 1:6) {
               bins <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE)
               n <- 0
