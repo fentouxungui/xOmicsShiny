@@ -94,10 +94,6 @@ jobs:
         shell: bash
         run: Rscript -e 'install.packages(c("jsonlite","zip","digest","BiocManager","callr","curl"), repos="https://cloud.r-project.org")'
 
-      - name: Install dylibbundler (macOS)
-        if: runner.os == 'macOS'
-        run: brew install dylibbundler
-
       - name: Resolve store version
         shell: bash
         run: |
@@ -107,6 +103,7 @@ jobs:
           echo "VERSION=$V" >> "$GITHUB_ENV"
 
       - name: Assemble bundle (app/ + rlib/ + manifest.json)
+        timeout-minutes: 120
         shell: Rscript {0}
         env:
           GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -195,44 +192,31 @@ jobs:
           ins(closure)
           nb <- setdiff(closure, have()); if (length(nb)) { cat("source retry:", length(nb), "\n"); ins(nb, type = "source", deps = FALSE) }
           if (identical(unname(Sys.info()[["sysname"]]), "Darwin")) {
-            sr <- split_pkgs(Sys.getenv("SOURCE_REBUILD"))
-            if (length(sr)) {
-              oldpath <- Sys.getenv("PATH"); pth <- strsplit(oldpath, .Platform$path.sep)[[1]]
-              pth <- pth[!grepl("homebrew|linuxbrew", pth, ignore.case = TRUE)]
-              Sys.setenv(PATH = paste(pth, collapse = .Platform$path.sep), PKG_CONFIG_PATH = "", PKG_CONFIG_LIBDIR = "")
-              cat("macOS source rebuild (Homebrew hidden):", paste(sr, collapse = ", "), "\n")
-              ins(sr, type = "source", deps = FALSE)
-              Sys.setenv(PATH = oldpath)
+            sysref <- "^(/opt/X11|/opt/homebrew|/usr/local/opt|/usr/local/Cellar)"
+            deps_of <- function(f) {
+              o <- suppressWarnings(system2("otool", c("-L", shQuote(f)), stdout = TRUE, stderr = FALSE))
+              if (length(o) < 2) return(character())
+              o <- trimws(sub(" \\(compatibility.*$", "", o[-1]))
+              o[nzchar(o)]
             }
-          }
-          if (mode == "package-fn") { install.packages(pkgroot, lib = lib, repos = NULL, type = "source", dependencies = FALSE); if (!pkg_name %in% have()) stop("app package failed to install: ", pkg_name) }
-          for (u in split_pkgs(Sys.getenv("ARCHIVE_URLS"))) { f <- tempfile(fileext = ".tar.gz"); download.file(u, f, mode = "wb", quiet = TRUE); try(install.packages(f, lib = lib, repos = NULL, type = "source", dependencies = FALSE), silent = TRUE) }
-
-          for (i in 1:5) {
-            installed <- have(); need <- character()
-            for (p in installed) { d <- tryCatch(read.dcf(file.path(lib, p, "DESCRIPTION")), error = function(e) NULL); if (!is.null(d)) need <- c(need, dcf_deps(d)) }
-            need <- setdiff(unique(intersect(need, rownames(db))), c(installed, base_pkgs))
-            if (!length(need)) break
-            cat("fix-up round", i, ":", paste(need, collapse = ", "), "\n"); ins(need)
-          }
-
-          if (identical(unname(Sys.info()[["sysname"]]), "Darwin")) {
-            audit <- function() {
-              bins <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE); bad <- character()
-              for (b in bins) { o <- suppressWarnings(system2("otool", c("-L", shQuote(b)), stdout = TRUE, stderr = FALSE)); if (any(grepl("(/opt/X11|/opt/homebrew|/usr/local/opt)", o))) bad <- c(bad, b) }
-              bad
+            sealfix <- function(f) system2("codesign", c("--force", "--sign", "-", shQuote(f)), stdout = FALSE, stderr = FALSE)
+            relocate <- function(b, dp) {
+              dest <- file.path(dirname(b), basename(dp))
+              if (!file.exists(dest)) file.copy(dp, dest, overwrite = TRUE)
+              system2("install_name_tool", c("-change", shQuote(dp), shQuote(paste0("@loader_path/", basename(dp))), shQuote(b)), stdout = FALSE, stderr = FALSE)
+              system2("install_name_tool", c("-id", shQuote(paste0("@loader_path/", basename(dp))), shQuote(dest)), stdout = FALSE, stderr = FALSE)
+              sealfix(dest); sealfix(b)
             }
-            bad <- audit()
-            if (length(bad)) {
-              db <- Sys.which("dylibbundler")
-              if (!nzchar(db)) stop("non-portable dylib references and dylibbundler missing: ", paste(unique(basename(bad)), collapse = ", "))
-              for (b in bad) {
-                cat("vendoring non-portable dylibs into", dirname(b), "\n")
-                system2(db, c("-of", "-b", "-x", shQuote(b), "-d", shQuote(dirname(b)), "-p", "@loader_path/"), stdout = TRUE, stderr = TRUE)
-              }
-              bad <- audit()
-              if (length(bad)) stop("non-portable dylib references remain: ", paste(unique(basename(bad)), collapse = ", "))
+            for (round in 1:6) {
+              bins <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE)
+              n <- 0
+              for (b in bins) for (dp in deps_of(b)) if (grepl(sysref, dp) && file.exists(dp)) { relocate(b, dp); n <- n + 1 }
+              cat("portability round", round, "relocations:", n, "\n")
+              if (n == 0) break
             }
+            bins <- list.files(lib, pattern = "[.](so|dylib)$", recursive = TRUE, full.names = TRUE); bad <- character()
+            for (b in bins) { o <- suppressWarnings(system2("otool", c("-L", shQuote(b)), stdout = TRUE, stderr = FALSE)); if (any(grepl(sysref, o))) bad <- c(bad, b) }
+            if (length(bad)) stop("non-portable dylib references remain: ", paste(unique(basename(bad)), collapse = ", "))
           }
 
           required <- setdiff(seed, c(soft, base_pkgs)); miss <- setdiff(required, have())
