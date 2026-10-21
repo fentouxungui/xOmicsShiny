@@ -60,7 +60,7 @@ env:
   DEMO_OBJECT: ""
   DEMO_SAVE_AS: ""
   DEMO_RDATA: ""
-  EXTRA_PKGS: "ComplexHeatmap DBI DT Hmisc Mfuzz PCSF RColorBrewer RMariaDB VennDiagram WGCNA BH biomaRt broom car circlize colourpicker coop corrplot cowplot dendextend dplyr drc dynamicTreeCut enrichR enrichplot factoextra fgsea flashClust forcats futile.logger ggExtra ggpmisc ggprism ggpubr ggrepel gplots gridExtra heatmaply htmlwidgets metabaser modelr networkD3 openxlsx org.Hs.eg.db org.Mm.eg.db org.Rn.eg.db pathview pheatmap plotly plyr png pool psych purrr rclipboard reshape2 rgl rlang scales shiny shinyalert shinyjqui shinyjs shinythemes stringi stringr svgPanZoom svglite tibble tidyr tidyselect tidyverse visNetwork wikiprofiler yulab.utils"
+  EXTRA_PKGS: "ComplexHeatmap DBI DT Hmisc Mfuzz PCSF RColorBrewer RMariaDB VennDiagram WGCNA BH biomaRt broom car circlize colourpicker coop corrplot cowplot dendextend dplyr drc dynamicTreeCut enrichR enrichplot factoextra fgsea flashClust forcats futile.logger ggExtra ggpmisc ggprism ggpubr ggrepel gplots gridExtra heatmaply htmlwidgets metabaser modelr networkD3 openxlsx org.Hs.eg.db org.Mm.eg.db org.Rn.eg.db topGO pathview pheatmap plotly plyr png pool psych purrr rclipboard reshape2 rgl rlang scales shiny shinyalert shinyjqui shinyjs shinythemes stringi stringr svgPanZoom svglite tibble tidyr tidyselect tidyverse visNetwork wikiprofiler yulab.utils"
   EXCLUDE: ""
   ARCHIVE_URLS: "https://codeload.github.com/IOR-Bioinformatics/PCSF/tar.gz/refs/heads/master"
   EXTRA_REPOS: ""
