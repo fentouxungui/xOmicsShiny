@@ -97,7 +97,15 @@ jobs:
       - name: Resolve store version
         shell: bash
         run: |
-          V="${{ github.event.release.tag_name }}${{ github.ref_name }}${{ inputs.tag }}"
+          if [ -n "${{ inputs.tag }}" ]; then
+            V="${{ inputs.tag }}"
+          elif [ -n "${{ github.event.release.tag_name }}" ]; then
+            V="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            V="${{ github.ref_name }}"
+          else
+            V="${GITHUB_SHA::7}"
+          fi
           V="${V#v}"
           if [ -z "$V" ]; then V="0.1.0"; fi
           echo "VERSION=$V" >> "$GITHUB_ENV"
