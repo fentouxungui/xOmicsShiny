@@ -64,10 +64,10 @@ env:
   EXCLUDE: ""
   ARCHIVE_URLS: "https://codeload.github.com/IOR-Bioinformatics/PCSF/tar.gz/refs/heads/master"
   EXTRA_REPOS: ""
-  SOFT_PKGS: "metabaser"
+  SOFT_PKGS: "metabaser Mfuzz"
   SOURCE_REBUILD: "gdtools"
   PREFETCH_SCRIPT: ""
-  APP_NOTES: "All analysis modules (WGCNA, PCSF, Mfuzz, DRomics, GSEA/ORA, network, pathway) and the db/ annotation + KEGG map assets are bundled. metabaser (MetaBase gene-set browser) is not on CRAN/Bioconductor and is therefore not bundled; its trigger file db/human/metabase_maps_genesymbols.gmt is absent, so the feature stays disabled and does not affect startup. Demo datasets in data/ and networkdata/ are included so every module works offline. ggrastr/Cairo is not bundled because its macOS binary requires XQuartz; the optional Rasterize plot toggle renders vector points instead."
+  APP_NOTES: "All analysis modules (WGCNA, PCSF, Mfuzz, DRomics, GSEA/ORA, network, pathway) and the db/ annotation + KEGG map assets are bundled. metabaser (MetaBase gene-set browser) is not on CRAN/Bioconductor and is therefore not bundled; its trigger file db/human/metabase_maps_genesymbols.gmt is absent, so the feature stays disabled and does not affect startup. Demo datasets in data/ and networkdata/ are included so every module works offline. ggrastr/Cairo is not bundled because its macOS binary requires XQuartz; the optional Rasterize plot toggle renders vector points instead. Mfuzz needs tcltk/XQuartz on macOS, so the soft-clustering module is disabled there and fully available on Windows."
   MAX_REQUEST_MB: "2048"
   SMOKE: "on"
   SMOKE_TIMEOUT_SEC: "900"
@@ -105,13 +105,16 @@ jobs:
       - name: Apply desktop compatibility patches
         shell: Rscript {0}
         run: |
-          # ggrastr (-> Cairo) is only used by the optional "Rasterize plot" toggle.
-          # Cairo's macOS binary requires XQuartz and cannot be shipped portably, so the
-          # bundle renders those points as vector geometry instead; the only difference is
-          # a larger vector object for very dense scatter plots.
+          # Two bundle-only patches; upstream sources are untouched.
+          # 1) ggrastr (-> Cairo) only backs the optional "Rasterize plot" toggle and its
+          #    macOS binary needs XQuartz, so points render as vector geometry instead.
+          # 2) Mfuzz needs tcltk (XQuartz on macOS); guard the load so the app still starts.
           g <- "global.R"; x <- readLines(g, warn = FALSE)
           x <- x[!grepl("library\\(ggrastr\\)", x)]
           writeLines(x, g)
+          pm <- "patternmodule.R"; x <- readLines(pm, warn = FALSE)
+          x <- sub("library\\(Mfuzz\\)", "if (requireNamespace(\"Mfuzz\", quietly = TRUE)) library(Mfuzz)", x)
+          writeLines(x, pm)
           d <- "degmodule.R"; x <- readLines(d, warn = FALSE)
           x <- gsub("geom_point_rast\\(", "geom_point(", x)
           x <- gsub(", *dev *= *[\"']ragg[\"']", "", x)
@@ -206,7 +209,7 @@ jobs:
           soft <- split_pkgs(Sys.getenv("SOFT_PKGS"))
           have <- function() basename(list.dirs(lib, recursive = FALSE))
           ins <- function(p, type = "both", deps = NA) if (length(p)) install.packages(p, lib = lib, repos = repos, type = type, dependencies = deps, Ncpus = 2)
-          ins(closure)
+          if (identical(unname(Sys.info()[["sysname"]]), "Darwin")) ins(setdiff(closure, "gdtools")) else ins(closure)
           if (identical(unname(Sys.info()[["sysname"]]), "Darwin")) {
             sr <- split_pkgs(Sys.getenv("SOURCE_REBUILD"))
             if (length(sr)) {
