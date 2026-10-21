@@ -264,6 +264,31 @@ jobs:
             cat("macOS portability audit: clean (", length(bins), "binaries )\n")
           }
 
+          if (mode == "package-fn") { install.packages(pkgroot, lib = lib, repos = NULL, type = "source", dependencies = FALSE); if (!pkg_name %in% have()) stop("app package failed to install: ", pkg_name) }
+
+          for (u in split_pkgs(Sys.getenv("ARCHIVE_URLS"))) {
+            f <- tempfile(fileext = ".tar.gz")
+            cat("archive install:", u, "\n")
+            dwn <- tryCatch({ download.file(u, f, mode = "wb", quiet = TRUE, method = "libcurl"); file.exists(f) && file.size(f) > 1000 },
+                            error = function(e) { cat("  download failed:", conditionMessage(e), "\n"); FALSE })
+            if (!isTRUE(dwn)) stop("ARCHIVE_URLS download failed: ", u)
+            install.packages(f, lib = lib, repos = NULL, type = "source", dependencies = FALSE)
+            cat("  archive package(s) now in rlib:", paste(intersect(c("PCSF"), have()), collapse = ", "), "\n")
+          }
+
+          for (i in 1:5) {
+            installed <- have(); need <- character()
+            for (p in installed) { d <- tryCatch(read.dcf(file.path(lib, p, "DESCRIPTION")), error = function(e) NULL); if (!is.null(d)) need <- c(need, dcf_deps(d)) }
+            need <- setdiff(unique(intersect(need, rownames(db))), c(installed, base_pkgs))
+            if (!length(need)) break
+            cat("fix-up round", i, ":", paste(need, collapse = ", "), "\n"); ins(need)
+          }
+
+          forced <- setdiff(split_pkgs(Sys.getenv("EXTRA_PKGS")), c(rownames(db), soft, base_pkgs))
+          forced_miss <- setdiff(forced, have())
+          if (length(forced_miss)) stop("packages outside CRAN/Bioc were not installed: ", paste(forced_miss, collapse = ", "))
+          cat("forced packages ok:", paste(intersect(forced, have()), collapse = ", "), "\n")
+
           required <- setdiff(seed, c(soft, base_pkgs)); miss <- setdiff(required, have())
           if (length(miss)) stop("missing required packages: ", paste(miss, collapse = ", "))
           for (p in required) { ok <- tryCatch({ loadNamespace(p, lib.loc = lib); TRUE }, error = function(e) { cat("LOAD FAILED:", p, "->", conditionMessage(e), "\n"); FALSE }); if (!ok) stop("seed package cannot be loaded from rlib: ", p) }
